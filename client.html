@@ -1,51 +1,115 @@
 <!DOCTYPE html>
 <html lang="ja">
-
 <head>
     <meta charset="UTF-8">
-    <!-- ビューポートの設定：モバイルデバイスでの表示を最適化 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>シンプルTODO</title>
+    <title>トレーニングTODOリスト</title>
     <style>
-        /* フォームの上下に余白を追加 */
-        .todo-form {
-            margin: 1rem 0;
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f7fc;
+            margin: 0;
+            padding: 0;
+            color: #333;
         }
 
-        /* 完了したTODOのスタイル：取り消し線と薄い色 */
+        .container {
+            width: 90%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #5b6e7e;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
         .completed {
             text-decoration: line-through;
             color: gray;
         }
+
+        button {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #c0392b;
+        }
+
+        input[type="text"], input[type="number"], select {
+            padding: 8px;
+            margin: 5px;
+            width: 100%;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        .form-container {
+            margin-bottom: 20px;
+        }
+
     </style>
 </head>
-
 <body>
-    <h1>TODOリスト</h1>
 
-    <!-- TODOを追加するためのフォーム -->
-    <form id="todoForm" class="todo-form">
-        <input type="text" id="todoInput" placeholder="新しいTODOを入力..." required>
-        <button type="submit">追加</button>
-    </form>
+    <div class="container">
+        <h1>トレーニングTODOリスト</h1>
 
-    <!-- TODOリストを表示する場所 -->
-    <ul id="todoList"></ul>
+        <!-- 曜日ごとにトレーニングメニューを入力 -->
+        <div class="form-container">
+            <select id="dayOfWeek">
+                <option value="Monday">月曜日</option>
+                <option value="Tuesday">火曜日</option>
+                <option value="Wednesday">水曜日</option>
+                <option value="Thursday">木曜日</option>
+                <option value="Friday">金曜日</option>
+                <option value="Saturday">土曜日</option>
+                <option value="Sunday">日曜日</option>
+            </select>
+
+            <input type="text" id="trainingContent" placeholder="トレーニング内容" required>
+            <input type="number" id="sets" placeholder="セット数" required>
+
+            <button onclick="addTraining()">トレーニングを追加</button>
+        </div>
+
+        <!-- 曜日ごとに追加されたトレーニングメニューを表示 -->
+        <div id="trainingListContainer"></div>
+    </div>
 
     <script>
-        // APIサーバーのベースURL
-        const API_URL = '/todos';
+        const API_URL = '/trainings';
 
-        /**
-         * APIとの通信を行う汎用関数
-         * @param {string} endpoint - APIのエンドポイント
-         * @param {Object} options - fetchのオプション（メソッド、ヘッダーなど）
-         * @returns {Promise} APIからのレスポンス
-         */
         async function api(endpoint, options = {}) {
             try {
                 const response = await fetch(endpoint, options);
-                if (!response.ok) throw new Error('API error');
+                if (!response.ok) throw new Error('APIエラー');
                 return response.json();
             } catch (error) {
                 alert('エラーが発生しました');
@@ -53,103 +117,98 @@
             }
         }
 
-        /**
-         * 1つのTODOアイテムのHTMLを生成
-         * @param {Object} todo - TODOオブジェクト（id, title, completedを含む）
-         * @returns {string} TODOアイテムのHTML文字列
-         */
-        function renderTodo(todo) {
+        function renderTraining(training) {
             return `
                 <li>
                     <input type="checkbox" 
-                           ${todo.completed ? 'checked' : ''} 
-                           onchange="toggleTodo(${todo.id}, this.checked)">
-                    <span class="${todo.completed ? 'completed' : ''}">${todo.title}</span>
-                    <button onclick="deleteTodo(${todo.id})">削除</button>
+                           ${training.completed ? 'checked' : ''} 
+                           onchange="toggleTraining(${training.id}, this.checked)">
+                    <span class="${training.completed ? 'completed' : ''}">
+                        ${training.day_of_week}: ${training.training_content} - ${training.sets}セット
+                    </span>
+                    <button onclick="deleteTraining(${training.id})">削除</button>
                 </li>
             `;
         }
 
-        /**
-         * すべてのTODOを読み込んでページに表示
-         */
-        async function loadTodos() {
-            // APIからTODOリストを取得
-            const todos = await api(API_URL);
-            if (todos) {
-                // 取得したTODOをHTMLに変換して表示
-                document.getElementById('todoList').innerHTML =
-                    todos.map(renderTodo).join('');
-            }
+        async function loadTrainings() {
+            const trainings = await api(API_URL);
+            const groupedTrainings = groupByDay(trainings);
+            renderGroupedTrainings(groupedTrainings);
         }
 
-        /**
-         * 新しいTODOを追加
-         * @param {string} title - 新しいTODOのタイトル
-         */
-        async function addTodo(title) {
-            // POSTリクエストでTODOを追加
-            await api(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, completed: false })
+        function groupByDay(trainings) {
+            return trainings.reduce((acc, training) => {
+                if (!acc[training.day_of_week]) {
+                    acc[training.day_of_week] = [];
+                }
+                acc[training.day_of_week].push(training);
+                return acc;
+            }, {});
+        }
+
+        function renderGroupedTrainings(groupedTrainings) {
+            const container = document.getElementById('trainingListContainer');
+            container.innerHTML = '';
+
+            Object.keys(groupedTrainings).forEach(day => {
+                const dayTrainings = groupedTrainings[day];
+                let dayContent = `
+                    <h3>${day}</h3>
+                    <ul>
+                `;
+                dayTrainings.forEach(training => {
+                    dayContent += renderTraining(training);
+                });
+                dayContent += '</ul>';
+                container.innerHTML += dayContent;
             });
-            // リストを再読み込みして表示を更新
-            loadTodos();
         }
 
-        /**
-         * TODOの完了状態を切り替え
-         * @param {number} id - TODOのID
-         * @param {boolean} completed - 新しい完了状態
-         */
-        async function toggleTodo(id, completed) {
-            // 現在のTODO情報を取得
-            const todo = await api(`${API_URL}/${id}`);
-            if (todo) {
-                // PUTリクエストでTODOを更新
+        async function toggleTraining(id, completed) {
+            const training = await api(`${API_URL}/${id}`);
+            if (training) {
                 await api(`${API_URL}/${id}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...todo, completed })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ...training, completed })
                 });
-                // リストを再読み込みして表示を更新
-                loadTodos();
+                loadTrainings();
             }
         }
 
-        /**
-         * TODOを削除
-         * @param {number} id - 削除するTODOのID
-         */
-        async function deleteTodo(id) {
-            // DELETEリクエストでTODOを削除
+        async function deleteTraining(id) {
             await api(`${API_URL}/${id}`, { method: 'DELETE' });
-            // リストを再読み込みして表示を更新
-            loadTodos();
+            loadTrainings();
         }
 
-        // ページ読み込み完了時の処理
-        document.addEventListener('DOMContentLoaded', () => {
-            // 初期表示としてTODOリストを読み込む
-            loadTodos();
+        async function addTraining() {
+            const content = document.getElementById('trainingContent').value.trim();
+            const sets = document.getElementById('sets').value.trim();
+            const dayOfWeek = document.getElementById('dayOfWeek').value;
 
-            // フォームの送信イベントを処理
-            document.getElementById('todoForm').addEventListener('submit', e => {
-                // フォームのデフォルトの送信動作を防止
-                e.preventDefault();
-                // 入力されたテキストを取得
-                const input = document.getElementById('todoInput');
-                const title = input.value.trim();
-                // テキストが入力されている場合のみTODOを追加
-                if (title) {
-                    addTodo(title);
-                    // 入力フィールドをクリア
-                    input.value = '';
-                }
-            });
+            if (content && sets) {
+                await api(API_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        training_content: content,
+                        sets: parseInt(sets),
+                        day_of_week: dayOfWeek,
+                        week_number: 1, // デフォルトで週番号1
+                        completed: false
+                    })
+                });
+                loadTrainings();
+                document.getElementById('trainingContent').value = '';
+                document.getElementById('sets').value = '';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTrainings();
         });
     </script>
-</body>
 
+</body>
 </html>
